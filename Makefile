@@ -46,7 +46,7 @@ test:
 
 .PHONY: build
 build:
-	CGO_ENABLED=0 go build -tags include_oss,include_gcs -ldflags "-X $(VERPKG).Version=$(VER) -X $(VERPKG).CommitID=$(COMMIT)" -o build/ ./cmd/...
+	CGO_ENABLED=0 go build -ldflags "-X $(VERPKG).Version=$(VER) -X $(VERPKG).CommitID=$(COMMIT)" -o build/ ./cmd/...
 
 .PHONY: docker-build
 docker-build:
@@ -54,12 +54,11 @@ docker-build:
 
 .PHONY: docker-push
 docker-push:
-	docker images
 	docker push $(IMAGE)
 
 .PHONY: docker-release
 docker-release: docker-build docker-push
 
 oci-release:
-	podman build --tag dst-image .
-	podman push dst-image docker://$(IMAGE)
+	buildah bud --tag dst-image .
+	buildah push dst-image docker://$(IMAGE)
