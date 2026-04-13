@@ -1,4 +1,4 @@
-module github.com/lyp256/proxy
+module github.com/lyp256/caddy-vless
 
 go 1.24
 

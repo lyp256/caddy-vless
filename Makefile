@@ -5,21 +5,9 @@ VERPKG=$(GOMODULE)/version
 
 PKGS=$(shell go list ./... |grep -v vendor |xargs echo)
 
-ifdef REF_NAME
-TAG:=$(REF_NAME)
-else
-TAG:=dev
-endif
-
 ifneq ($(REF_TYPE),tag)
 TAG:=$(TAG)-$(COMMIT)
 endif
-
-IMAGE=docker.io/lyp256/proxy:$(TAG)
-
-print:
-	echo $(IMAGE)
-
 
 .PHONY: fmt
 fmt:
@@ -47,18 +35,3 @@ test:
 .PHONY: build
 build:
 	CGO_ENABLED=0 go build -ldflags "-X $(VERPKG).Version=$(VER) -X $(VERPKG).CommitID=$(COMMIT)" -o build/ ./cmd/...
-
-.PHONY: docker-build
-docker-build:
-	docker build --tag $(IMAGE) .
-
-.PHONY: docker-push
-docker-push:
-	docker push $(IMAGE)
-
-.PHONY: docker-release
-docker-release: docker-build docker-push
-
-oci-release:
-	buildah bud --tag dst-image .
-	buildah push dst-image docker://$(IMAGE)

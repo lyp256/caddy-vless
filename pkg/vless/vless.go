@@ -11,7 +11,7 @@ import (
 
 	"github.com/sirupsen/logrus"
 
-	"github.com/lyp256/proxy/pkg/utils"
+	"github.com/lyp256/caddy-vless/pkg/utils"
 )
 
 type Handler interface {
