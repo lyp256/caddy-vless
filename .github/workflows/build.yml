@@ -1,6 +1,9 @@
 name: GO
 
-on: [push,release]
+on:
+  push:
+  release:
+    types: [published]
 
 jobs:
   test:
@@ -41,3 +44,45 @@ jobs:
         with:
           name: binary
           path: build/
+
+  release-binaries:
+    name: Release binaries (${{ matrix.arch }})
+    if: github.event_name == 'release'
+    needs: [test]
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        arch: [amd64, arm64]
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/setup-go@v4
+        with:
+          go-version: '^1.23'
+      - run: go version
+
+      - name: checkout code
+        uses: actions/checkout@v4
+
+      - name: build release binary
+        env:
+          GOOS: linux
+          GOARCH: ${{ matrix.arch }}
+          CGO_ENABLED: '0'
+          VERSION: ${{ github.event.release.tag_name }}
+          COMMIT: ${{ github.sha }}
+        run: |
+          mkdir -p build
+          BINARY_NAME="caddy-vless_${VERSION}_linux_${GOARCH}"
+          GOMODULE=$(go list -m)
+          VERPKG="${GOMODULE}/version"
+          SHORT_COMMIT=$(printf '%.7s' "$COMMIT")
+          go build \
+            -ldflags "-X ${VERPKG}.Version=${VERSION} -X ${VERPKG}.CommitID=${SHORT_COMMIT}" \
+            -o "build/${BINARY_NAME}" \
+            ./cmd/caddy
+
+      - name: upload release asset
+        uses: softprops/action-gh-release@v2
+        with:
+          files: build/caddy-vless_${{ github.event.release.tag_name }}_linux_${{ matrix.arch }}
