@@ -2,6 +2,8 @@
 
 caddy 添加 vless 协议支持模块
 
+GitHub Releases 只发布 Linux `amd64` 和 `arm64` 二进制文件，不再提供 Docker 镜像。
+
 Example:
 ```
 https://example.com {
