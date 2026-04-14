@@ -21,8 +21,12 @@ tidy:
 vet:
 	go vet $(PKGS)
 
+.PHONY: lint
+lint:
+	golangci-lint-v2 run ./...
+
 .PHONY: all-check
-all-check:tidy fmt vet git-check
+all-check:tidy fmt vet lint git-check
 
 .PHONY: git-check
 git-check:

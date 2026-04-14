@@ -65,7 +65,7 @@ func (h *handler) Handle(ctx context.Context, connect io.ReadWriteCloser) error 
 	if err != nil {
 		return fmt.Errorf("dial %s %s fail:%s", network, request.DestAddr(), err)
 	}
-	defer upStream.Close()
+	defer func() { _ = upStream.Close() }()
 
 	up, down, err := utils.Transport(upStream, connect)
 	if h.postHandle != nil {
@@ -121,7 +121,7 @@ func (h httpHandler) ServeHTTP(writer http.ResponseWriter, request *http.Request
 	if err != nil {
 		return
 	}
-	defer connect.Close()
+	defer func() { _ = connect.Close() }()
 	err = h.Handle(request.Context(), connect)
 	if err != nil {
 		logrus.Info(err)
