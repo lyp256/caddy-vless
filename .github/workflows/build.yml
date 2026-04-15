@@ -1,88 +1,110 @@
-name: GO
+name: Go
 
 on:
   push:
+    branches:
+      - main
+  pull_request:
   release:
     types: [published]
 
+permissions:
+  contents: read
+
 jobs:
   test:
-    name: Test
+    name: Check and test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/setup-go@v4
-        with:
-          go-version: '^1.23'
-      - run: go version
-
-      - name: checkout code
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: check
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Show Go version
+        run: go version
+
+      - name: Run checks
         run: make all-check
 
-      - name: test
+      - name: Run tests
         run: make test
 
   build:
-    name: Build
+    name: Build binary
     runs-on: ubuntu-latest
+    needs: test
     steps:
-      - uses: actions/setup-go@v4
-        with:
-          go-version: '^1.23'
-      - run: go version
-
-      - name: checkout code
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: build
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install xcaddy
+        run: go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
+
+      - name: Show Go version
+        run: go version
+
+      - name: Build binary
         run: make build
 
-      - name: upload artifact
+      - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: binary
-          path: build/
+          name: caddy
+          path: build/caddy
 
   release-binaries:
     name: Release binaries (${{ matrix.arch }})
     if: github.event_name == 'release'
-    needs: [test]
+    needs: test
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        arch: [amd64, arm64]
     permissions:
       contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
     steps:
-      - uses: actions/setup-go@v4
-        with:
-          go-version: '^1.23'
-      - run: go version
-
-      - name: checkout code
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: build release binary
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install xcaddy
+        run: go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
+
+      - name: Show Go version
+        run: go version
+
+      - name: Build release binary
         env:
           GOOS: linux
           GOARCH: ${{ matrix.arch }}
           CGO_ENABLED: '0'
           VERSION: ${{ github.event.release.tag_name }}
-          COMMIT: ${{ github.sha }}
         run: |
           mkdir -p build
           BINARY_NAME="caddy-vless_${VERSION}_linux_${GOARCH}"
-          GOMODULE=$(go list -m)
-          VERPKG="${GOMODULE}/version"
-          SHORT_COMMIT=$(printf '%.7s' "$COMMIT")
-          go build \
-            -ldflags "-X ${VERPKG}.Version=${VERSION} -X ${VERPKG}.CommitID=${SHORT_COMMIT}" \
-            -o "build/${BINARY_NAME}" \
-            ./cmd/caddy
+          "$(go env GOPATH)/bin/xcaddy" build \
+            --with github.com/lyp256/caddy-vless=. \
+            --with github.com/caddy-dns/alidns \
+            --output "build/${BINARY_NAME}"
 
-      - name: upload release asset
+      - name: Upload release asset
         uses: softprops/action-gh-release@v2
         with:
           files: build/caddy-vless_${{ github.event.release.tag_name }}_linux_${{ matrix.arch }}

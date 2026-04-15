@@ -1,13 +1,16 @@
 VER=develop
 COMMIT=$(shell git rev-parse --short HEAD)
-GOMODULE=$(shell go list -m)
-VERPKG=$(GOMODULE)/version
+TAG?=$(VER)
 
 PKGS=$(shell go list ./... |grep -v vendor |xargs echo)
 
 ifneq ($(REF_TYPE),tag)
 TAG:=$(TAG)-$(COMMIT)
 endif
+
+XCADDY?=$(shell go env GOPATH)/bin/xcaddy
+MODULE=$(shell go list -m)
+XCADDY_BUILD_ARGS=build --with $(MODULE)=. --with github.com/caddy-dns/alidns
 
 .PHONY: fmt
 fmt:
@@ -38,4 +41,5 @@ test:
 
 .PHONY: build
 build:
-	CGO_ENABLED=0 go build -ldflags "-X $(VERPKG).Version=$(VER) -X $(VERPKG).CommitID=$(COMMIT)" -o build/ ./cmd/...
+	mkdir -p build
+	CGO_ENABLED=0 $(XCADDY) $(XCADDY_BUILD_ARGS) --output ./build/caddy
