@@ -1,16 +1,5 @@
 // Copyright The OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 package ot // import "go.opentelemetry.io/contrib/propagators/ot"
 
@@ -20,11 +9,10 @@ import (
 	"fmt"
 	"strings"
 
-	"go.uber.org/multierr"
-
 	"go.opentelemetry.io/otel/baggage"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
+	"go.uber.org/multierr"
 )
 
 const (
@@ -49,14 +37,13 @@ var (
 )
 
 // OT propagator serializes SpanContext to/from ot-trace-* headers.
-type OT struct {
-}
+type OT struct{}
 
 var _ propagation.TextMapPropagator = OT{}
 
 // Inject injects a context into the carrier as OT headers.
 // NOTE: In order to interop with systems that use the OT header format, trace ids MUST be 64-bits.
-func (o OT) Inject(ctx context.Context, carrier propagation.TextMapCarrier) {
+func (OT) Inject(ctx context.Context, carrier propagation.TextMapCarrier) {
 	sc := trace.SpanFromContext(ctx).SpanContext()
 
 	if !sc.TraceID().IsValid() || !sc.SpanID().IsValid() {
@@ -79,7 +66,7 @@ func (o OT) Inject(ctx context.Context, carrier propagation.TextMapCarrier) {
 }
 
 // Extract extracts a context from the carrier if it contains OT headers.
-func (o OT) Extract(ctx context.Context, carrier propagation.TextMapCarrier) context.Context {
+func (OT) Extract(ctx context.Context, carrier propagation.TextMapCarrier) context.Context {
 	var (
 		sc  trace.SpanContext
 		err error
@@ -104,7 +91,7 @@ func (o OT) Extract(ctx context.Context, carrier propagation.TextMapCarrier) con
 }
 
 // Fields returns the OT header keys whose values are set with Inject.
-func (o OT) Fields() []string {
+func (OT) Fields() []string {
 	return []string{traceIDHeader, spanIDHeader, sampledHeader}
 }
 

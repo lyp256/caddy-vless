@@ -19,7 +19,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	weakrand "math/rand"
+	weakrand "math/rand/v2"
 	"net/http"
 	"strings"
 	"sync"
@@ -236,10 +236,7 @@ func (c *Cache) makeRoom() {
 	// the cache is on a long tail, we can save a lot of CPU
 	// time by doing a whole bunch of deletions now and then
 	// we won't have to do them again for a while
-	numToDelete := len(c.cache) / 10
-	if numToDelete < 1 {
-		numToDelete = 1
-	}
+	numToDelete := max(len(c.cache)/10, 1)
 	for deleted := 0; deleted <= numToDelete; deleted++ {
 		// Go maps are "nondeterministic" not actually random,
 		// so although we could just chop off the "front" of the
@@ -247,7 +244,7 @@ func (c *Cache) makeRoom() {
 		// strategy; generating random numbers is cheap and
 		// ensures a much better distribution.
 		//nolint:gosec
-		rnd := weakrand.Intn(len(c.cache))
+		rnd := weakrand.IntN(len(c.cache))
 		i := 0
 		for key := range c.cache {
 			if i == rnd {
@@ -290,7 +287,7 @@ type Account struct {
 
 	// The user's hashed password, in Modular Crypt Format (with `$` prefix)
 	// or base64-encoded.
-	Password string `json:"password"`
+	Password string `json:"password"` //nolint:gosec // false positive, this is a hashed password
 
 	password []byte
 }

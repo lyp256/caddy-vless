@@ -1,3 +1,6 @@
+// Copyright (c) Faye Amacker. All rights reserved.
+// Licensed under the MIT License. See LICENSE in the project root for license information.
+
 package cbor
 
 import (
@@ -33,11 +36,11 @@ func (sv SimpleValue) MarshalCBOR() ([]byte, error) {
 	// only has a single representation variant)."
 
 	switch {
-	case sv <= 23:
+	case sv <= maxSimpleValueInAdditionalInformation:
 		return []byte{byte(cborTypePrimitives) | byte(sv)}, nil
 
-	case sv >= 32:
-		return []byte{byte(cborTypePrimitives) | byte(24), byte(sv)}, nil
+	case sv >= minSimpleValueIn1ByteArgument:
+		return []byte{byte(cborTypePrimitives) | additionalInformationWith1ByteArgument, byte(sv)}, nil
 
 	default:
 		return nil, &UnsupportedValueError{msg: fmt.Sprintf("SimpleValue(%d)", sv)}
@@ -45,7 +48,33 @@ func (sv SimpleValue) MarshalCBOR() ([]byte, error) {
 }
 
 // UnmarshalCBOR decodes CBOR simple value (major type 7) to SimpleValue.
+//
+// Deprecated: No longer used by this codec; kept for compatibility
+// with user apps that directly call this function.
 func (sv *SimpleValue) UnmarshalCBOR(data []byte) error {
+	if sv == nil {
+		return errors.New("cbor.SimpleValue: UnmarshalCBOR on nil pointer")
+	}
+
+	d := decoder{data: data, dm: defaultDecMode}
+
+	// Check well-formedness of CBOR data item.
+	// SimpleValue.UnmarshalCBOR() is exported, so
+	// the codec needs to support same behavior for:
+	// - Unmarshal(data, *SimpleValue)
+	// - SimpleValue.UnmarshalCBOR(data)
+	err := d.wellformed(false, false)
+	if err != nil {
+		return err
+	}
+
+	return sv.unmarshalCBOR(data)
+}
+
+// unmarshalCBOR decodes CBOR simple value (major type 7) to SimpleValue.
+// This function assumes data is well-formed, and does not perform bounds checking.
+// This function is called by Unmarshal().
+func (sv *SimpleValue) unmarshalCBOR(data []byte) error {
 	if sv == nil {
 		return errors.New("cbor.SimpleValue: UnmarshalCBOR on nil pointer")
 	}
@@ -57,7 +86,7 @@ func (sv *SimpleValue) UnmarshalCBOR(data []byte) error {
 	if typ != cborTypePrimitives {
 		return &UnmarshalTypeError{CBORType: typ.String(), GoType: "SimpleValue"}
 	}
-	if ai > 24 {
+	if ai > additionalInformationWith1ByteArgument {
 		return &UnmarshalTypeError{CBORType: typ.String(), GoType: "SimpleValue", errorMsg: "not simple values"}
 	}
 

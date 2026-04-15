@@ -20,7 +20,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	weakrand "math/rand"
+	weakrand "math/rand/v2"
 	"net"
 	"net/http"
 	"strconv"
@@ -219,16 +219,13 @@ func (r RandomChoiceSelection) Validate() error {
 
 // Select returns an available host, if any.
 func (r RandomChoiceSelection) Select(pool UpstreamPool, _ *http.Request, _ http.ResponseWriter) *Upstream {
-	k := r.Choose
-	if k > len(pool) {
-		k = len(pool)
-	}
+	k := min(r.Choose, len(pool))
 	choices := make([]*Upstream, k)
 	for i, upstream := range pool {
 		if !upstream.Available() {
 			continue
 		}
-		j := weakrand.Intn(i + 1) //nolint:gosec
+		j := weakrand.IntN(i + 1) //nolint:gosec
 		if j < k {
 			choices[j] = upstream
 		}
@@ -277,7 +274,7 @@ func (LeastConnSelection) Select(pool UpstreamPool, _ *http.Request, _ http.Resp
 		// sample: https://en.wikipedia.org/wiki/Reservoir_sampling
 		if numReqs == leastReqs {
 			count++
-			if count == 1 || (weakrand.Int()%count) == 0 { //nolint:gosec
+			if count == 1 || weakrand.IntN(count) == 0 { //nolint:gosec
 				bestHost = host
 			}
 		}
@@ -315,7 +312,7 @@ func (r *RoundRobinSelection) Select(pool UpstreamPool, _ *http.Request, _ http.
 	if n == 0 {
 		return nil
 	}
-	for i := uint32(0); i < n; i++ {
+	for range n {
 		robin := atomic.AddUint32(&r.robin, 1)
 		host := pool[robin%n]
 		if host.Available() {
@@ -620,7 +617,7 @@ type CookieHashSelection struct {
 	// The HTTP cookie name whose value is to be hashed and used for upstream selection.
 	Name string `json:"name,omitempty"`
 	// Secret to hash (Hmac256) chosen upstream in cookie
-	Secret string `json:"secret,omitempty"`
+	Secret string `json:"secret,omitempty"` //nolint:gosec // yes it's exported because it needs to encode to JSON
 	// The cookie's Max-Age before it expires. Default is no expiry.
 	MaxAge caddy.Duration `json:"max_age,omitempty"`
 
@@ -791,7 +788,7 @@ func selectRandomHost(pool []*Upstream) *Upstream {
 		// upstream will always be chosen if there is at
 		// least one available
 		count++
-		if (weakrand.Int() % count) == 0 { //nolint:gosec
+		if weakrand.IntN(count) == 0 { //nolint:gosec
 			randomHost = upstream
 		}
 	}
@@ -808,7 +805,7 @@ func leastRequests(upstreams []*Upstream) *Upstream {
 		return nil
 	}
 	var best []*Upstream
-	var bestReqs int = -1
+	bestReqs := -1
 	for _, upstream := range upstreams {
 		if upstream == nil {
 			continue
@@ -830,7 +827,7 @@ func leastRequests(upstreams []*Upstream) *Upstream {
 	if len(best) == 1 {
 		return best[0]
 	}
-	return best[weakrand.Intn(len(best))] //nolint:gosec
+	return best[weakrand.IntN(len(best))] //nolint:gosec
 }
 
 // hostByHashing returns an available host from pool based on a hashable string s.

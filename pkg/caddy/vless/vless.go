@@ -107,5 +107,4 @@ var (
 	_ caddy.Validator             = (*vlessModule)(nil)
 	_ caddyhttp.MiddlewareHandler = (*vlessModule)(nil)
 	_ caddyfile.Unmarshaler       = (*vlessModule)(nil)
-	_ caddyfile.Unmarshaler       = (*vlessModule)(nil)
 )

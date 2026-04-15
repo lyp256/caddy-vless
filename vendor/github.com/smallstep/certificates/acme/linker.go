@@ -86,7 +86,7 @@ func GetUnescapedPathSuffix(typ LinkType, provisionerName string, inputs ...stri
 	case AccountLinkType, OrderLinkType, AuthzLinkType, CertificateLinkType:
 		return fmt.Sprintf("/%s/%s/%s", provisionerName, typ, inputs[0])
 	case ChallengeLinkType:
-		return fmt.Sprintf("/%s/%s/%s/%s", provisionerName, typ, inputs[0], inputs[1])
+		return fmt.Sprintf("/%s/%s/%s/%s", provisionerName, typ, inputs[0], inputs[1]) //nolint:gosec // operating on internally defined inputs
 	case OrdersByAccountLinkType:
 		return fmt.Sprintf("/%s/%s/%s/orders", provisionerName, AccountLinkType, inputs[0])
 	case FinalizeLinkType:
@@ -186,19 +186,25 @@ func (l *linker) Middleware(next http.Handler) http.Handler {
 		nameEscaped := chi.URLParam(r, "provisionerID")
 		name, err := url.PathUnescape(nameEscaped)
 		if err != nil {
-			render.Error(w, WrapErrorISE(err, "error url unescaping provisioner name '%s'", nameEscaped))
+			render.Error(w, r, WrapErrorISE(err, "error url unescaping provisioner name '%s'", nameEscaped))
 			return
 		}
 
 		p, err := authority.MustFromContext(ctx).LoadProvisionerByName(name)
 		if err != nil {
-			render.Error(w, err)
+			render.Error(w, r, err)
 			return
 		}
 
-		acmeProv, ok := p.(*provisioner.ACME)
-		if !ok {
-			render.Error(w, NewError(ErrorAccountDoesNotExistType, "provisioner must be of type ACME"))
+		var acmeProv *provisioner.ACME
+		switch prov := p.(type) {
+		case *provisioner.ACME:
+			acmeProv = prov
+		case provisioner.Uninitialized:
+			render.Error(w, r, NewDetailedError(ErrorUnauthorizedType, "provisioner is disabled due to an initialization error"))
+			return
+		default:
+			render.Error(w, r, NewDetailedError(ErrorUnauthorizedType, "provisioner must be of type ACME"))
 			return
 		}
 

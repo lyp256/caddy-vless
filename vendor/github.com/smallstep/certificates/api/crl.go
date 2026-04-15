@@ -13,12 +13,12 @@ import (
 func CRL(w http.ResponseWriter, r *http.Request) {
 	crlInfo, err := mustAuthority(r.Context()).GetCertificateRevocationList()
 	if err != nil {
-		render.Error(w, err)
+		render.Error(w, r, err)
 		return
 	}
 
 	if crlInfo == nil {
-		render.Error(w, errs.New(http.StatusNotFound, "no CRL available"))
+		render.Error(w, r, errs.New(http.StatusNotFound, "no CRL available"))
 		return
 	}
 
@@ -41,6 +41,6 @@ func CRL(w http.ResponseWriter, r *http.Request) {
 	} else {
 		w.Header().Add("Content-Type", "application/pkix-crl")
 		w.Header().Add("Content-Disposition", "attachment; filename=\"crl.der\"")
-		w.Write(crlInfo.Data)
+		w.Write(crlInfo.Data) //nolint:gosec // writing CRL binary data
 	}
 }

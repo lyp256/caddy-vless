@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -119,13 +120,41 @@ type httpHandler struct {
 func (h httpHandler) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 	connect, err := utils.H2Hijack(writer, request)
 	if err != nil {
+		logrus.WithError(err).Warn("vless hijack failed")
+		http.Error(writer, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		return
 	}
 	defer func() { _ = connect.Close() }()
+
 	err = h.Handle(request.Context(), connect)
-	if err != nil {
-		logrus.Info(err)
-		http.Error(writer, http.StatusText(http.StatusNotFound), http.StatusNotFound)
+	if err == nil {
+		return
+	}
+
+	status := httpStatus(err)
+	entry := logrus.WithError(err).WithField("status", status)
+	if status >= http.StatusInternalServerError {
+		entry.Error("vless request failed")
+	} else {
+		entry.Warn("vless request rejected")
+	}
+	http.Error(writer, http.StatusText(status), status)
+}
+
+func httpStatus(err error) int {
+	switch {
+	case err == nil:
+		return http.StatusOK
+	case strings.HasPrefix(err.Error(), "preVerify:"):
+		return http.StatusForbidden
+	case strings.HasPrefix(err.Error(), "handshake:"), strings.HasPrefix(err.Error(), "unknown command:"), strings.HasPrefix(err.Error(), "reply :"):
+		return http.StatusBadRequest
+	case strings.HasPrefix(err.Error(), "dial "):
+		return http.StatusBadGateway
+	case strings.HasPrefix(err.Error(), "traffic forward:"):
+		return http.StatusBadGateway
+	default:
+		return http.StatusInternalServerError
 	}
 }
 

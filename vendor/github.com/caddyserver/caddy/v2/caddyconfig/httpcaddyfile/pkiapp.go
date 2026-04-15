@@ -15,6 +15,9 @@
 package httpcaddyfile
 
 import (
+	"slices"
+	"strconv"
+
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
@@ -25,14 +28,16 @@ func init() {
 	RegisterGlobalOption("pki", parsePKIApp)
 }
 
-// parsePKIApp parses the global log option. Syntax:
+// parsePKIApp parses the global pki option. Syntax:
 //
 //	pki {
 //	    ca [<id>] {
-//	        name                  <name>
-//	        root_cn               <name>
-//	        intermediate_cn       <name>
-//	        intermediate_lifetime <duration>
+//	        name                    <name>
+//	        root_cn                 <name>
+//	        intermediate_cn         <name>
+//	        intermediate_lifetime   <duration>
+//	        maintenance_interval    <duration>
+//	        renewal_window_ratio    <ratio>
 //	        root {
 //	            cert   <path>
 //	            key    <path>
@@ -96,6 +101,26 @@ func parsePKIApp(d *caddyfile.Dispenser, existingVal any) (any, error) {
 						return nil, err
 					}
 					pkiCa.IntermediateLifetime = caddy.Duration(dur)
+
+				case "maintenance_interval":
+					if !d.NextArg() {
+						return nil, d.ArgErr()
+					}
+					dur, err := caddy.ParseDuration(d.Val())
+					if err != nil {
+						return nil, err
+					}
+					pkiCa.MaintenanceInterval = caddy.Duration(dur)
+
+				case "renewal_window_ratio":
+					if !d.NextArg() {
+						return nil, d.ArgErr()
+					}
+					ratio, err := strconv.ParseFloat(d.Val(), 64)
+					if err != nil || ratio <= 0 || ratio > 1 {
+						return nil, d.Errf("renewal_window_ratio must be a number in (0, 1], got %s", d.Val())
+					}
+					pkiCa.RenewalWindowRatio = ratio
 
 				case "root":
 					if pkiCa.Root == nil {
@@ -178,6 +203,15 @@ func (st ServerType) buildPKIApp(
 	if _, ok := options["skip_install_trust"]; ok {
 		skipInstallTrust = true
 	}
+
+	// check if auto_https is off - in that case we should not create
+	// any PKI infrastructure even with skip_install_trust directive
+	autoHTTPS := []string{}
+	if ah, ok := options["auto_https"].([]string); ok {
+		autoHTTPS = ah
+	}
+	autoHTTPSOff := slices.Contains(autoHTTPS, "off")
+
 	falseBool := false
 
 	// Load the PKI app configured via global options
@@ -218,7 +252,8 @@ func (st ServerType) buildPKIApp(
 	// if there was no CAs defined in any of the servers,
 	// and we were requested to not install trust, then
 	// add one for the default/local CA to do so
-	if len(pkiApp.CAs) == 0 && skipInstallTrust {
+	// only if auto_https is not completely disabled
+	if len(pkiApp.CAs) == 0 && skipInstallTrust && !autoHTTPSOff {
 		ca := new(caddypki.CA)
 		ca.ID = caddypki.DefaultCAID
 		ca.InstallTrust = &falseBool

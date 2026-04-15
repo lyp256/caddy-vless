@@ -7,8 +7,8 @@ import (
 	"net"
 	"sync"
 
-	"github.com/v2fly/v2ray-core/v5/common/protocol"
-	"github.com/v2fly/v2ray-core/v5/common/uuid"
+	"github.com/xtls/xray-core/common/protocol"
+	"github.com/xtls/xray-core/common/uuid"
 )
 
 var requestPool = sync.Pool{
@@ -24,6 +24,13 @@ type requestInfo struct {
 	// Variable
 	addons   []byte
 	destAddr string
+}
+
+func (r *requestInfo) reset() {
+	r.effective = false
+	clear(r.fixedData[:])
+	r.addons = nil
+	r.destAddr = ""
 }
 
 func (r *requestInfo) Version() byte {
@@ -54,21 +61,18 @@ func (r *requestInfo) DestAddr() string {
 }
 
 func (r *requestInfo) FromReader(reader io.Reader) error {
-	r.effective = false
+	r.reset()
 	// read version uuid addonsLength
-	_, err := reader.Read(r.fixedData[:18])
-	if err != nil {
+	if _, err := io.ReadFull(reader, r.fixedData[:18]); err != nil {
 		return err
 	}
 	// read addons
 	r.addons = make([]byte, r.fixedData[17])
-	_, err = reader.Read(r.addons)
-	if err != nil {
+	if _, err := io.ReadFull(reader, r.addons); err != nil {
 		return err
 	}
 	// read command port addrType
-	_, err = reader.Read(r.fixedData[18:22])
-	if err != nil {
+	if _, err := io.ReadFull(reader, r.fixedData[18:22]); err != nil {
 		return err
 	}
 	// read address
@@ -78,8 +82,7 @@ func (r *requestInfo) FromReader(reader io.Reader) error {
 		return err
 	}
 	buf := make([]byte, addrLength)
-	_, err = reader.Read(buf)
-	if err != nil {
+	if _, err := io.ReadFull(reader, buf); err != nil {
 		return err
 	}
 	switch addrType {
@@ -110,8 +113,7 @@ func getAddrLength(addrType byte, reader io.Reader) (byte, error) {
 		return 16, nil
 	case AddrTypeDomain:
 		domainLength := make([]byte, 1)
-		_, err := reader.Read(domainLength)
-		if err != nil {
+		if _, err := io.ReadFull(reader, domainLength); err != nil {
 			return 0, err
 		}
 		return domainLength[0], nil

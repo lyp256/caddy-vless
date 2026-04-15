@@ -1,17 +1,8 @@
 // Copyright The OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
+// Package xray provides an OpenTelemetry propagator for the AWS XRAY
+// propagation format.
 package xray // import "go.opentelemetry.io/contrib/propagators/aws/xray"
 
 import (
@@ -64,7 +55,7 @@ type Propagator struct{}
 var _ propagation.TextMapPropagator = &Propagator{}
 
 // Inject injects a context to the carrier following AWS X-Ray format.
-func (xray Propagator) Inject(ctx context.Context, carrier propagation.TextMapCarrier) {
+func (Propagator) Inject(ctx context.Context, carrier propagation.TextMapCarrier) {
 	sc := trace.SpanFromContext(ctx).SpanContext()
 	if !sc.TraceID().IsValid() || !sc.SpanID().IsValid() {
 		return
@@ -74,17 +65,19 @@ func (xray Propagator) Inject(ctx context.Context, carrier propagation.TextMapCa
 		traceIDDelimiter + otTraceID[traceIDFirstPartLength:]
 	parentID := sc.SpanID()
 	samplingFlag := notSampled
-	if sc.TraceFlags() == traceFlagSampled {
+	if sc.TraceFlags().IsSampled() {
 		samplingFlag = isSampled
 	}
-	headers := []string{traceIDKey, kvDelimiter, xrayTraceID, traceHeaderDelimiter, parentIDKey,
-		kvDelimiter, parentID.String(), traceHeaderDelimiter, sampleFlagKey, kvDelimiter, samplingFlag}
+	headers := []string{
+		traceIDKey, kvDelimiter, xrayTraceID, traceHeaderDelimiter, parentIDKey,
+		kvDelimiter, parentID.String(), traceHeaderDelimiter, sampleFlagKey, kvDelimiter, samplingFlag,
+	}
 
 	carrier.Set(traceHeaderKey, strings.Join(headers, ""))
 }
 
 // Extract gets a context from the carrier if it contains AWS X-Ray headers.
-func (xray Propagator) Extract(ctx context.Context, carrier propagation.TextMapCarrier) context.Context {
+func (Propagator) Extract(ctx context.Context, carrier propagation.TextMapCarrier) context.Context {
 	// extract tracing information
 	if header := carrier.Get(traceHeaderKey); header != "" {
 		sc, err := extract(header)
@@ -110,7 +103,7 @@ func extract(headerVal string) (trace.SpanContext, error) {
 			part = headerVal[pos:delimiterIndex]
 			pos = delimiterIndex + 1
 		} else {
-			//last part
+			// last part
 			part = strings.TrimSpace(headerVal[pos:])
 			pos = len(headerVal)
 		}
@@ -119,19 +112,20 @@ func extract(headerVal string) (trace.SpanContext, error) {
 			return empty, errInvalidTraceHeader
 		}
 		value := part[equalsIndex+1:]
-		if strings.HasPrefix(part, traceIDKey) {
+		switch {
+		case strings.HasPrefix(part, traceIDKey):
 			scc.TraceID, err = parseTraceID(value)
 			if err != nil {
 				return empty, err
 			}
-		} else if strings.HasPrefix(part, parentIDKey) {
-			//extract parentId
+		case strings.HasPrefix(part, parentIDKey):
+			// extract parentId
 			scc.SpanID, err = trace.SpanIDFromHex(value)
 			if err != nil {
 				return empty, errInvalidSpanIDLength
 			}
-		} else if strings.HasPrefix(part, sampleFlagKey) {
-			//extract traceflag
+		case strings.HasPrefix(part, sampleFlagKey):
+			// extract traceflag
 			scc.TraceFlags = parseTraceFlag(value)
 		}
 	}
@@ -139,7 +133,7 @@ func extract(headerVal string) (trace.SpanContext, error) {
 }
 
 // indexOf returns position of the first occurrence of a substr in str starting at pos index.
-func indexOf(str string, substr string, pos int) int {
+func indexOf(str, substr string, pos int) int {
 	index := strings.Index(str[pos:], substr)
 	if index > -1 {
 		index += pos
@@ -170,13 +164,14 @@ func parseTraceID(xrayTraceID string) (trace.TraceID, error) {
 
 // parseTraceFlag returns a parsed trace flag.
 func parseTraceFlag(xraySampledFlag string) trace.TraceFlags {
-	if len(xraySampledFlag) == sampledFlagLength && xraySampledFlag != isSampled {
-		return traceFlagNone
+	// Use a direct comparison here (#7262).
+	if xraySampledFlag == isSampled {
+		return trace.FlagsSampled
 	}
-	return trace.FlagsSampled
+	return trace.FlagsSampled.WithSampled(false)
 }
 
 // Fields returns list of fields used by HTTPTextFormat.
-func (xray Propagator) Fields() []string {
+func (Propagator) Fields() []string {
 	return []string{traceHeaderKey}
 }

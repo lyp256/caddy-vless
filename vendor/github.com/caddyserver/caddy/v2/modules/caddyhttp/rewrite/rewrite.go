@@ -247,6 +247,7 @@ func (rewr Rewrite) Rewrite(r *http.Request, repl *caddy.Replacer) bool {
 			} else {
 				r.URL.Path = path
 			}
+			r.URL.RawPath = "" // force recomputing when EscapedPath() is called
 		}
 		if qsStart >= 0 {
 			r.URL.RawQuery = newQuery
@@ -377,11 +378,7 @@ func buildQueryString(qs string, repl *caddy.Replacer) string {
 // performed in normalized/unescaped space.
 func trimPathPrefix(escapedPath, prefix string) string {
 	var iPath, iPrefix int
-	for {
-		if iPath >= len(escapedPath) || iPrefix >= len(prefix) {
-			break
-		}
-
+	for iPath < len(escapedPath) && iPrefix < len(prefix) {
 		prefixCh := prefix[iPrefix]
 		ch := string(escapedPath[iPath])
 

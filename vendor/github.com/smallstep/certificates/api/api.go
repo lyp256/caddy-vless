@@ -31,6 +31,7 @@ import (
 	"github.com/smallstep/certificates/authority/config"
 	"github.com/smallstep/certificates/authority/provisioner"
 	"github.com/smallstep/certificates/errs"
+	"github.com/smallstep/certificates/internal/cast"
 	"github.com/smallstep/certificates/logging"
 )
 
@@ -52,6 +53,7 @@ type Authority interface {
 	Revoke(context.Context, *authority.RevokeOptions) error
 	GetEncryptedKey(kid string) (string, error)
 	GetRoots() ([]*x509.Certificate, error)
+	GetIntermediateCertificates() []*x509.Certificate
 	GetFederation() ([]*x509.Certificate, error)
 	Version() authority.Version
 	GetCertificateRevocationList() (*authority.CertificateRevocationListInfo, error)
@@ -295,6 +297,11 @@ type RootsResponse struct {
 	Certificates []Certificate `json:"crts"`
 }
 
+// IntermediatesResponse is the response object of the intermediates request.
+type IntermediatesResponse struct {
+	Certificates []Certificate `json:"crts"`
+}
+
 // FederationResponse is the response object of the federation request.
 type FederationResponse struct {
 	Certificates []Certificate `json:"crts"`
@@ -330,7 +337,10 @@ func Route(r Router) {
 	r.MethodFunc("GET", "/provisioners/{kid}/encrypted-key", ProvisionerKey)
 	r.MethodFunc("GET", "/roots", Roots)
 	r.MethodFunc("GET", "/roots.pem", RootsPEM)
+	r.MethodFunc("GET", "/intermediates", Intermediates)
+	r.MethodFunc("GET", "/intermediates.pem", IntermediatesPEM)
 	r.MethodFunc("GET", "/federation", Federation)
+
 	// SSH CA
 	r.MethodFunc("POST", "/ssh/sign", SSHSign)
 	r.MethodFunc("POST", "/ssh/renew", SSHRenew)
@@ -353,15 +363,15 @@ func Route(r Router) {
 // Version is an HTTP handler that returns the version of the server.
 func Version(w http.ResponseWriter, r *http.Request) {
 	v := mustAuthority(r.Context()).Version()
-	render.JSON(w, VersionResponse{
+	render.JSON(w, r, VersionResponse{
 		Version:                     v.Version,
 		RequireClientAuthentication: v.RequireClientAuthentication,
 	})
 }
 
 // Health is an HTTP handler that returns the status of the server.
-func Health(w http.ResponseWriter, _ *http.Request) {
-	render.JSON(w, HealthResponse{Status: "ok"})
+func Health(w http.ResponseWriter, r *http.Request) {
+	render.JSON(w, r, HealthResponse{Status: "ok"})
 }
 
 // Root is an HTTP handler that using the SHA256 from the URL, returns the root
@@ -372,11 +382,11 @@ func Root(w http.ResponseWriter, r *http.Request) {
 	// Load root certificate with the
 	cert, err := mustAuthority(r.Context()).Root(sum)
 	if err != nil {
-		render.Error(w, errs.Wrapf(http.StatusNotFound, err, "%s was not found", r.RequestURI))
+		render.Error(w, r, errs.NotFoundErr(err, errs.WithMessage("root certificate with fingerprint %q was not found", sum)))
 		return
 	}
 
-	render.JSON(w, &RootResponse{RootPEM: Certificate{cert}})
+	render.JSON(w, r, &RootResponse{RootPEM: Certificate{cert}})
 }
 
 func certChainToPEM(certChain []*x509.Certificate) []Certificate {
@@ -391,17 +401,17 @@ func certChainToPEM(certChain []*x509.Certificate) []Certificate {
 func Provisioners(w http.ResponseWriter, r *http.Request) {
 	cursor, limit, err := ParseCursor(r)
 	if err != nil {
-		render.Error(w, err)
+		render.Error(w, r, err)
 		return
 	}
 
 	p, next, err := mustAuthority(r.Context()).GetProvisioners(cursor, limit)
 	if err != nil {
-		render.Error(w, errs.InternalServerErr(err))
+		render.Error(w, r, errs.InternalServerErr(err))
 		return
 	}
 
-	render.JSON(w, &ProvisionersResponse{
+	render.JSON(w, r, &ProvisionersResponse{
 		Provisioners: p,
 		NextCursor:   next,
 	})
@@ -412,18 +422,18 @@ func ProvisionerKey(w http.ResponseWriter, r *http.Request) {
 	kid := chi.URLParam(r, "kid")
 	key, err := mustAuthority(r.Context()).GetEncryptedKey(kid)
 	if err != nil {
-		render.Error(w, errs.NotFoundErr(err))
+		render.Error(w, r, errs.NotFoundErr(err))
 		return
 	}
 
-	render.JSON(w, &ProvisionerKeyResponse{key})
+	render.JSON(w, r, &ProvisionerKeyResponse{key})
 }
 
 // Roots returns all the root certificates for the CA.
 func Roots(w http.ResponseWriter, r *http.Request) {
 	roots, err := mustAuthority(r.Context()).GetRoots()
 	if err != nil {
-		render.Error(w, errs.ForbiddenErr(err, "error getting roots"))
+		render.Error(w, r, errs.ForbiddenErr(err, "error getting roots"))
 		return
 	}
 
@@ -432,7 +442,7 @@ func Roots(w http.ResponseWriter, r *http.Request) {
 		certs[i] = Certificate{roots[i]}
 	}
 
-	render.JSONStatus(w, &RootsResponse{
+	render.JSONStatus(w, r, &RootsResponse{
 		Certificates: certs,
 	}, http.StatusCreated)
 }
@@ -441,7 +451,7 @@ func Roots(w http.ResponseWriter, r *http.Request) {
 func RootsPEM(w http.ResponseWriter, r *http.Request) {
 	roots, err := mustAuthority(r.Context()).GetRoots()
 	if err != nil {
-		render.Error(w, errs.InternalServerErr(err))
+		render.Error(w, r, errs.InternalServerErr(err))
 		return
 	}
 
@@ -454,7 +464,48 @@ func RootsPEM(w http.ResponseWriter, r *http.Request) {
 		})
 
 		if _, err := w.Write(block); err != nil {
-			log.Error(w, err)
+			log.Error(w, r, err)
+			return
+		}
+	}
+}
+
+// Intermediates returns all the intermediate certificates of the CA.
+func Intermediates(w http.ResponseWriter, r *http.Request) {
+	intermediates := mustAuthority(r.Context()).GetIntermediateCertificates()
+	if len(intermediates) == 0 {
+		render.Error(w, r, errs.NotImplemented("error getting intermediates: method not implemented"))
+		return
+	}
+
+	certs := make([]Certificate, len(intermediates))
+	for i := range intermediates {
+		certs[i] = Certificate{intermediates[i]}
+	}
+
+	render.JSONStatus(w, r, &IntermediatesResponse{
+		Certificates: certs,
+	}, http.StatusCreated)
+}
+
+// IntermediatesPEM returns all the intermediate certificates for the CA in PEM format.
+func IntermediatesPEM(w http.ResponseWriter, r *http.Request) {
+	intermediates := mustAuthority(r.Context()).GetIntermediateCertificates()
+	if len(intermediates) == 0 {
+		render.Error(w, r, errs.NotImplemented("error getting intermediates: method not implemented"))
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/x-pem-file")
+
+	for _, crt := range intermediates {
+		block := pem.EncodeToMemory(&pem.Block{
+			Type:  "CERTIFICATE",
+			Bytes: crt.Raw,
+		})
+
+		if _, err := w.Write(block); err != nil {
+			log.Error(w, r, err)
 			return
 		}
 	}
@@ -464,7 +515,7 @@ func RootsPEM(w http.ResponseWriter, r *http.Request) {
 func Federation(w http.ResponseWriter, r *http.Request) {
 	federated, err := mustAuthority(r.Context()).GetFederation()
 	if err != nil {
-		render.Error(w, errs.ForbiddenErr(err, "error getting federated roots"))
+		render.Error(w, r, errs.ForbiddenErr(err, "error getting federated roots"))
 		return
 	}
 
@@ -473,7 +524,7 @@ func Federation(w http.ResponseWriter, r *http.Request) {
 		certs[i] = Certificate{federated[i]}
 	}
 
-	render.JSONStatus(w, &FederationResponse{
+	render.JSONStatus(w, r, &FederationResponse{
 		Certificates: certs,
 	}, http.StatusCreated)
 }
@@ -501,6 +552,7 @@ func LogCertificate(w http.ResponseWriter, cert *x509.Certificate) {
 			"serial":      cert.SerialNumber.String(),
 			"subject":     cert.Subject.CommonName,
 			"issuer":      cert.Issuer.CommonName,
+			"sans":        fmtSans(cert),
 			"valid-from":  cert.NotBefore.Format(time.RFC3339),
 			"valid-to":    cert.NotAfter.Format(time.RFC3339),
 			"public-key":  fmtPublicKey(cert),
@@ -545,8 +597,8 @@ func LogSSHCertificate(w http.ResponseWriter, cert *ssh.Certificate) {
 		m := map[string]interface{}{
 			"serial":           cert.Serial,
 			"principals":       cert.ValidPrincipals,
-			"valid-from":       time.Unix(int64(cert.ValidAfter), 0).Format(time.RFC3339),
-			"valid-to":         time.Unix(int64(cert.ValidBefore), 0).Format(time.RFC3339),
+			"valid-from":       time.Unix(cast.Int64(cert.ValidAfter), 0).Format(time.RFC3339),
+			"valid-to":         time.Unix(cast.Int64(cert.ValidBefore), 0).Format(time.RFC3339),
 			"certificate":      certificate,
 			"certificate-type": certificateType,
 		}
@@ -572,6 +624,31 @@ func ParseCursor(r *http.Request) (cursor string, limit int, err error) {
 		}
 	}
 	return
+}
+
+func fmtSans(cert *x509.Certificate) map[string][]string {
+	sans := make(map[string][]string)
+	if len(cert.DNSNames) > 0 {
+		sans["dns"] = cert.DNSNames
+	}
+	if len(cert.EmailAddresses) > 0 {
+		sans["email"] = cert.EmailAddresses
+	}
+	if size := len(cert.IPAddresses); size > 0 {
+		ips := make([]string, size)
+		for i, ip := range cert.IPAddresses {
+			ips[i] = ip.String()
+		}
+		sans["ip"] = ips
+	}
+	if size := len(cert.URIs); size > 0 {
+		uris := make([]string, size)
+		for i, u := range cert.URIs {
+			uris[i] = u.String()
+		}
+		sans["uri"] = uris
+	}
+	return sans
 }
 
 func fmtPublicKey(cert *x509.Certificate) string {

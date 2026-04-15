@@ -24,7 +24,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	weakrand "math/rand"
+	weakrand "math/rand/v2"
 	"mime"
 	"net/http"
 	"sync"
@@ -94,9 +94,9 @@ func (h *Handler) handleUpgradeResponse(logger *zap.Logger, wg *sync.WaitGroup, 
 		conn io.ReadWriteCloser
 		brw  *bufio.ReadWriter
 	)
-	// websocket over http2, assuming backend doesn't support this, the request will be modified to http1.1 upgrade
+	// websocket over http2 or http3 if extended connect is enabled, assuming backend doesn't support this, the request will be modified to http1.1 upgrade
 	// TODO: once we can reliably detect backend support this, it can be removed for those backends
-	if body, ok := caddyhttp.GetVar(req.Context(), "h2_websocket_body").(io.ReadCloser); ok {
+	if body, ok := caddyhttp.GetVar(req.Context(), "extended_connect_websocket_body").(io.ReadCloser); ok {
 		req.Body = body
 		rw.Header().Del("Upgrade")
 		rw.Header().Del("Connection")
@@ -146,7 +146,7 @@ func (h *Handler) handleUpgradeResponse(logger *zap.Logger, wg *sync.WaitGroup, 
 	// adopted from https://github.com/golang/go/commit/8bcf2834afdf6a1f7937390903a41518715ef6f5
 	backConnCloseCh := make(chan struct{})
 	go func() {
-		// Ensure that the cancelation of a request closes the backend.
+		// Ensure that the cancellation of a request closes the backend.
 		// See issue https://golang.org/issue/35559.
 		select {
 		case <-req.Context().Done():
@@ -214,7 +214,10 @@ func (h *Handler) handleUpgradeResponse(logger *zap.Logger, wg *sync.WaitGroup, 
 		timeoutc = timer.C
 	}
 
-	errc := make(chan error, 1)
+	// when a stream timeout is encountered, no error will be read from errc
+	// a buffer size of 2 will allow both the read and write goroutines to send the error and exit
+	// see: https://github.com/caddyserver/caddy/issues/7418
+	errc := make(chan error, 2)
 	wg.Add(2)
 	go spc.copyToBackend(errc)
 	go spc.copyFromBackend(errc)
@@ -526,14 +529,14 @@ func maskBytes(key [4]byte, pos int, b []byte) int {
 	// Create aligned word size key.
 	var k [wordSize]byte
 	for i := range k {
-		k[i] = key[(pos+i)&3]
+		k[i] = key[(pos+i)&3] // nolint:gosec // false positive, impossible to be out of bounds; see: https://github.com/securego/gosec/issues/1525
 	}
 	kw := *(*uintptr)(unsafe.Pointer(&k))
 
 	// Mask one word at a time.
 	n := (len(b) / wordSize) * wordSize
 	for i := 0; i < n; i += wordSize {
-		*(*uintptr)(unsafe.Pointer(uintptr(unsafe.Pointer(&b[0])) + uintptr(i))) ^= kw
+		*(*uintptr)(unsafe.Add(unsafe.Pointer(&b[0]), i)) ^= kw
 	}
 
 	// Mask one byte at a time for remaining bytes.
@@ -588,11 +591,11 @@ func (m *maxLatencyWriter) Write(p []byte) (n int, err error) {
 		m.logger.Debug("flushing immediately")
 		//nolint:errcheck
 		m.flush()
-		return
+		return n, err
 	}
 	if m.flushPending {
 		m.logger.Debug("delayed flush already pending")
-		return
+		return n, err
 	}
 	if m.t == nil {
 		m.t = time.AfterFunc(m.latency, m.delayedFlush)
@@ -603,7 +606,7 @@ func (m *maxLatencyWriter) Write(p []byte) (n int, err error) {
 		c.Write(zap.Duration("duration", m.latency))
 	}
 	m.flushPending = true
-	return
+	return n, err
 }
 
 func (m *maxLatencyWriter) delayedFlush() {

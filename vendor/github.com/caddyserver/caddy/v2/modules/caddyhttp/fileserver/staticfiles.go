@@ -20,7 +20,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	weakrand "math/rand"
+	weakrand "math/rand/v2"
 	"mime"
 	"net/http"
 	"os"
@@ -125,6 +125,11 @@ type FileServer struct {
 	// When possible, all paths are resolved to their absolute form before
 	// comparisons are made. For maximum clarity and explictness, use complete,
 	// absolute paths; or, for greater portability, use relative paths instead.
+	//
+	// Note that hide comparisons are case-sensitive. On case-insensitive
+	// filesystems, requests with different path casing may still resolve to the
+	// same file or directory on disk, so hide should not be treated as a
+	// security boundary for sensitive paths.
 	Hide []string `json:"hide,omitempty"`
 
 	// The names of files to try as index files if a folder is requested.
@@ -167,6 +172,8 @@ type FileServer struct {
 	// If set, file Etags will be read from sidecar files
 	// with any of these suffixes, instead of generating
 	// our own Etag.
+	// Keep in mind that the Etag values in the files have to be quoted as per RFC7232.
+	// See https://datatracker.ietf.org/doc/html/rfc7232#section-2.3 for a few examples.
 	EtagFileExtensions []string `json:"etag_file_extensions,omitempty"`
 
 	fsmap caddy.FileSystems
@@ -300,8 +307,10 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 	info, err := fs.Stat(fileSystem, filename)
 	if err != nil {
 		err = fsrv.mapDirOpenError(fileSystem, err, filename)
-		if errors.Is(err, fs.ErrNotExist) || errors.Is(err, fs.ErrInvalid) {
+		if errors.Is(err, fs.ErrNotExist) {
 			return fsrv.notFound(w, r, next)
+		} else if errors.Is(err, fs.ErrInvalid) {
+			return caddyhttp.Error(http.StatusBadRequest, err)
 		} else if errors.Is(err, fs.ErrPermission) {
 			return caddyhttp.Error(http.StatusForbidden, err)
 		}
@@ -453,7 +462,14 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 		}
 		defer file.Close()
 		respHeader.Set("Content-Encoding", ae)
-		respHeader.Del("Accept-Ranges")
+
+		// stdlib won't set Content-Length for non-range requests if Content-Encoding is set.
+		// see: https://github.com/caddyserver/caddy/issues/7040
+		// Setting the Range header manually will result in 206 Partial Content.
+		// see: https://github.com/caddyserver/caddy/issues/7250
+		if r.Header.Get("Range") == "" {
+			respHeader.Set("Content-Length", strconv.FormatInt(compressedInfo.Size(), 10))
+		}
 
 		// try to get the etag from pre computed files if an etag suffix list was provided
 		if etag == "" && fsrv.EtagFileExtensions != nil {
@@ -590,7 +606,7 @@ func (fsrv *FileServer) openFile(fileSystem fs.FS, filename string, w http.Respo
 		// maybe the server is under load and ran out of file descriptors?
 		// have client wait arbitrary seconds to help prevent a stampede
 		//nolint:gosec
-		backoff := weakrand.Intn(maxBackoff-minBackoff) + minBackoff
+		backoff := weakrand.IntN(maxBackoff-minBackoff) + minBackoff
 		w.Header().Set("Retry-After", strconv.Itoa(backoff))
 		if c := fsrv.logger.Check(zapcore.DebugLevel, "retry after backoff"); c != nil {
 			c.Write(zap.String("filename", filename), zap.Int("backoff", backoff), zap.Error(err))
@@ -609,6 +625,11 @@ func (fsrv *FileServer) openFile(fileSystem fs.FS, filename string, w http.Respo
 func (fsrv *FileServer) mapDirOpenError(fileSystem fs.FS, originalErr error, name string) error {
 	if errors.Is(originalErr, fs.ErrNotExist) || errors.Is(originalErr, fs.ErrPermission) {
 		return originalErr
+	}
+
+	var pathErr *fs.PathError
+	if errors.As(originalErr, &pathErr) {
+		return fs.ErrInvalid
 	}
 
 	parts := strings.Split(name, separator)
@@ -677,11 +698,11 @@ func fileHidden(filename string, hide []string) bool {
 					return true
 				}
 			}
-		} else if strings.HasPrefix(filename, h) {
+		} else if after, ok := strings.CutPrefix(filename, h); ok {
 			// if there is a separator in h, and filename is exactly
 			// prefixed with h, then we can do a prefix match so that
 			// "/foo" matches "/foo/bar" but not "/foobar".
-			withoutPrefix := strings.TrimPrefix(filename, h)
+			withoutPrefix := after
 			if strings.HasPrefix(withoutPrefix, separator) {
 				return true
 			}

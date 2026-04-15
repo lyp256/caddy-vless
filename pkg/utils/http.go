@@ -51,5 +51,5 @@ func (h *h2Stream) Write(p []byte) (n int, err error) {
 }
 
 func (h *h2Stream) Close() error {
-	return nil
+	return h.request.Body.Close()
 }

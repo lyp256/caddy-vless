@@ -1,16 +1,5 @@
 // Copyright The OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 package jaeger // import "go.opentelemetry.io/contrib/propagators/jaeger"
 
@@ -62,18 +51,19 @@ var _ propagation.TextMapPropagator = &Jaeger{}
 
 // Inject injects a context to the carrier following jaeger format.
 // The parent span ID is set to an dummy parent span id as the most implementations do.
-func (jaeger Jaeger) Inject(ctx context.Context, carrier propagation.TextMapCarrier) {
+func (Jaeger) Inject(ctx context.Context, carrier propagation.TextMapCarrier) {
 	sc := trace.SpanFromContext(ctx).SpanContext()
 	headers := []string{}
 	if !sc.TraceID().IsValid() || !sc.SpanID().IsValid() {
 		return
 	}
 	headers = append(headers, sc.TraceID().String(), sc.SpanID().String(), deprecatedParentSpanID)
-	if debugFromContext(ctx) {
+	switch {
+	case debugFromContext(ctx):
 		headers = append(headers, fmt.Sprintf("%x", flagsDebug|flagsSampled))
-	} else if sc.IsSampled() {
+	case sc.IsSampled():
 		headers = append(headers, fmt.Sprintf("%x", flagsSampled))
-	} else {
+	default:
 		headers = append(headers, fmt.Sprintf("%x", flagsNotSampled))
 	}
 
@@ -81,7 +71,7 @@ func (jaeger Jaeger) Inject(ctx context.Context, carrier propagation.TextMapCarr
 }
 
 // Extract extracts a context from the carrier if it contains Jaeger headers.
-func (jaeger Jaeger) Extract(ctx context.Context, carrier propagation.TextMapCarrier) context.Context {
+func (Jaeger) Extract(ctx context.Context, carrier propagation.TextMapCarrier) context.Context {
 	// extract tracing information
 	if h := carrier.Get(jaegerHeader); h != "" {
 		ctx, sc, err := extract(ctx, h)
@@ -162,6 +152,6 @@ func extract(ctx context.Context, headerVal string) (context.Context, trace.Span
 }
 
 // Fields returns the Jaeger header key whose value is set with Inject.
-func (jaeger Jaeger) Fields() []string {
+func (Jaeger) Fields() []string {
 	return []string{jaegerHeader}
 }

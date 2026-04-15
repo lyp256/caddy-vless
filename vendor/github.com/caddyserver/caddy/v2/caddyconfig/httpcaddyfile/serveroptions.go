@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"slices"
+	"strconv"
 
 	"github.com/dustin/go-humanize"
 
@@ -35,23 +36,30 @@ type serverOptions struct {
 	ListenerAddress string
 
 	// These will all map 1:1 to the caddyhttp.Server struct
-	Name                 string
-	ListenerWrappersRaw  []json.RawMessage
-	ReadTimeout          caddy.Duration
-	ReadHeaderTimeout    caddy.Duration
-	WriteTimeout         caddy.Duration
-	IdleTimeout          caddy.Duration
-	KeepAliveInterval    caddy.Duration
-	MaxHeaderBytes       int
-	EnableFullDuplex     bool
-	Protocols            []string
-	StrictSNIHost        *bool
-	TrustedProxiesRaw    json.RawMessage
-	TrustedProxiesStrict int
-	ClientIPHeaders      []string
-	ShouldLogCredentials bool
-	Metrics              *caddyhttp.Metrics
-	Trace                bool // TODO: EXPERIMENTAL
+	Name                  string
+	ListenerWrappersRaw   []json.RawMessage
+	PacketConnWrappersRaw []json.RawMessage
+	ReadTimeout           caddy.Duration
+	ReadHeaderTimeout     caddy.Duration
+	WriteTimeout          caddy.Duration
+	IdleTimeout           caddy.Duration
+	KeepAliveInterval     caddy.Duration
+	KeepAliveIdle         caddy.Duration
+	KeepAliveCount        int
+	MaxHeaderBytes        int
+	EnableFullDuplex      bool
+	Protocols             []string
+	StrictSNIHost         *bool
+	TrustedProxiesRaw     json.RawMessage
+	TrustedProxiesStrict  int
+	TrustedProxiesUnix    bool
+	ClientIPHeaders       []string
+	ShouldLogCredentials  bool
+	Metrics               *caddyhttp.Metrics
+	Trace                 bool // TODO: EXPERIMENTAL
+	// If set, overrides whether QUIC listeners allow 0-RTT (early data).
+	// If nil, the default behavior is used (currently allowed).
+	Allow0RTT *bool
 }
 
 func unmarshalCaddyfileServerOptions(d *caddyfile.Dispenser) (any, error) {
@@ -93,6 +101,26 @@ func unmarshalCaddyfileServerOptions(d *caddyfile.Dispenser) (any, error) {
 					nil,
 				)
 				serverOpts.ListenerWrappersRaw = append(serverOpts.ListenerWrappersRaw, jsonListenerWrapper)
+			}
+
+		case "packet_conn_wrappers":
+			for nesting := d.Nesting(); d.NextBlock(nesting); {
+				modID := "caddy.packetconns." + d.Val()
+				unm, err := caddyfile.UnmarshalModule(d, modID)
+				if err != nil {
+					return nil, err
+				}
+				packetConnWrapper, ok := unm.(caddy.PacketConnWrapper)
+				if !ok {
+					return nil, fmt.Errorf("module %s (%T) is not a packet conn wrapper", modID, unm)
+				}
+				jsonPacketConnWrapper := caddyconfig.JSONModuleObject(
+					packetConnWrapper,
+					"wrapper",
+					packetConnWrapper.(caddy.Module).CaddyModule().ID.Name(),
+					nil,
+				)
+				serverOpts.PacketConnWrappersRaw = append(serverOpts.PacketConnWrappersRaw, jsonPacketConnWrapper)
 			}
 
 		case "timeouts":
@@ -142,6 +170,7 @@ func unmarshalCaddyfileServerOptions(d *caddyfile.Dispenser) (any, error) {
 					return nil, d.Errf("unrecognized timeouts option '%s'", d.Val())
 				}
 			}
+
 		case "keepalive_interval":
 			if !d.NextArg() {
 				return nil, d.ArgErr()
@@ -151,6 +180,26 @@ func unmarshalCaddyfileServerOptions(d *caddyfile.Dispenser) (any, error) {
 				return nil, d.Errf("parsing keepalive interval duration: %v", err)
 			}
 			serverOpts.KeepAliveInterval = caddy.Duration(dur)
+
+		case "keepalive_idle":
+			if !d.NextArg() {
+				return nil, d.ArgErr()
+			}
+			dur, err := caddy.ParseDuration(d.Val())
+			if err != nil {
+				return nil, d.Errf("parsing keepalive idle duration: %v", err)
+			}
+			serverOpts.KeepAliveIdle = caddy.Duration(dur)
+
+		case "keepalive_count":
+			if !d.NextArg() {
+				return nil, d.ArgErr()
+			}
+			cnt, err := strconv.ParseInt(d.Val(), 10, 32)
+			if err != nil {
+				return nil, d.Errf("parsing keepalive count int: %v", err)
+			}
+			serverOpts.KeepAliveCount = int(cnt)
 
 		case "max_header_size":
 			var sizeStr string
@@ -227,6 +276,12 @@ func unmarshalCaddyfileServerOptions(d *caddyfile.Dispenser) (any, error) {
 			}
 			serverOpts.TrustedProxiesStrict = 1
 
+		case "trusted_proxies_unix":
+			if d.NextArg() {
+				return nil, d.ArgErr()
+			}
+			serverOpts.TrustedProxiesUnix = true
+
 		case "client_ip_headers":
 			headers := d.RemainingArgs()
 			for _, header := range headers {
@@ -256,6 +311,17 @@ func unmarshalCaddyfileServerOptions(d *caddyfile.Dispenser) (any, error) {
 				return nil, d.ArgErr()
 			}
 			serverOpts.Trace = true
+
+		case "0rtt":
+			// only supports "off" for now
+			if !d.NextArg() {
+				return nil, d.ArgErr()
+			}
+			if d.Val() != "off" {
+				return nil, d.Errf("unsupported 0rtt argument '%s' (only 'off' is supported)", d.Val())
+			}
+			boolVal := false
+			serverOpts.Allow0RTT = &boolVal
 
 		default:
 			return nil, d.Errf("unrecognized servers option '%s'", d.Val())
@@ -304,11 +370,14 @@ func applyServerOptions(
 
 		// set all the options
 		server.ListenerWrappersRaw = opts.ListenerWrappersRaw
+		server.PacketConnWrappersRaw = opts.PacketConnWrappersRaw
 		server.ReadTimeout = opts.ReadTimeout
 		server.ReadHeaderTimeout = opts.ReadHeaderTimeout
 		server.WriteTimeout = opts.WriteTimeout
 		server.IdleTimeout = opts.IdleTimeout
 		server.KeepAliveInterval = opts.KeepAliveInterval
+		server.KeepAliveIdle = opts.KeepAliveIdle
+		server.KeepAliveCount = opts.KeepAliveCount
 		server.MaxHeaderBytes = opts.MaxHeaderBytes
 		server.EnableFullDuplex = opts.EnableFullDuplex
 		server.Protocols = opts.Protocols
@@ -316,7 +385,9 @@ func applyServerOptions(
 		server.TrustedProxiesRaw = opts.TrustedProxiesRaw
 		server.ClientIPHeaders = opts.ClientIPHeaders
 		server.TrustedProxiesStrict = opts.TrustedProxiesStrict
+		server.TrustedProxiesUnix = opts.TrustedProxiesUnix
 		server.Metrics = opts.Metrics
+		server.Allow0RTT = opts.Allow0RTT
 		if opts.ShouldLogCredentials {
 			if server.Logs == nil {
 				server.Logs = new(caddyhttp.ServerLogConfig)
