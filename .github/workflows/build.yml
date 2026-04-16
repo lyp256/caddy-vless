@@ -14,6 +14,7 @@ permissions:
 env:
   XCADDY_PKG: github.com/caddyserver/xcaddy/cmd/xcaddy@latest
   XCADDY_BIN: ${{ github.workspace }}/bin/xcaddy
+  GOBIN: ${{ github.workspace }}/bin
 
 jobs:
   test:
@@ -29,10 +30,13 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Add Go bin to PATH
+        run: echo "$GOBIN" >> "$GITHUB_PATH"
+
       - name: Setup golangci-lint
         run: |
           go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.11.4
-          ln -sf "$(go env GOPATH)/bin/golangci-lint" "$(go env GOPATH)/bin/golangci-lint-v2"
+          ln -sf "$GOBIN/golangci-lint" "$GOBIN/golangci-lint-v2"
 
       - name: Show Go version
         run: go version
@@ -57,9 +61,12 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Add Go bin to PATH
+        run: echo "$GOBIN" >> "$GITHUB_PATH"
+
       - name: Install xcaddy
         run: |
-          GOBIN="$GITHUB_WORKSPACE/bin" go install "$XCADDY_PKG"
+          go install "$XCADDY_PKG"
           "$XCADDY_BIN" version
 
       - name: Show Go version
@@ -96,9 +103,12 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Add Go bin to PATH
+        run: echo "$GOBIN" >> "$GITHUB_PATH"
+
       - name: Install xcaddy
         run: |
-          GOBIN="$GITHUB_WORKSPACE/bin" go install "$XCADDY_PKG"
+          go install "$XCADDY_PKG"
           "$XCADDY_BIN" version
 
       - name: Show Go version
