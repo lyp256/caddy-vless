@@ -1,0 +1,19 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "caddy",
+            "type": "go",
+            "request": "launch",
+            "mode": "exec",
+            "program": "${workspaceFolder}/build/caddy",
+            "preLaunchTask": "build caddy debug binary",
+            "cwd": "${workspaceFolder}",
+            "args": [
+                "run",
+                "--config",
+                "${workspaceFolder}/build/caddyfile"
+            ]
+        }
+    ]
+}

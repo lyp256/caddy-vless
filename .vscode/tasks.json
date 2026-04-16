@@ -1,0 +1,17 @@
+{
+    "version": "0.2.0",
+    "tasks": [
+        {
+            "label": "build caddy debug binary",
+            "type": "shell",
+            "command": "go build -gcflags=all='-N -l' -o \"${workspaceFolder}/build/caddy\" ./cmd/caddy",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": [
+                "$go"
+            ],
+            "group": "build"
+        }
+    ]
+}

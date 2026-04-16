@@ -14,6 +14,10 @@ import (
 	"github.com/lyp256/caddy-vless/pkg/utils"
 )
 
+type Dialer interface {
+	DialContext(ctx context.Context, network, address string) (net.Conn, error)
+}
+
 type Handler interface {
 	Handle(ctx context.Context, connect io.ReadWriteCloser) error
 }
@@ -21,7 +25,7 @@ type Handler interface {
 type handler struct {
 	preHandle  func(ctx context.Context, request Requester) error
 	postHandle func(ctx context.Context, request Requester, upBytes, downBytes int64, err error)
-	dialer     net.Dialer
+	dialer     Dialer
 }
 
 func (h *handler) Handle(ctx context.Context, connect io.ReadWriteCloser) error {
@@ -92,7 +96,7 @@ func WithPostHandle(postHandle func(ctx context.Context, request Requester, upBy
 	}
 }
 
-func WithDial(dialer net.Dialer) Option {
+func WithDial(dialer Dialer) Option {
 	return func(h *handler) {
 		h.dialer = dialer
 	}
@@ -100,7 +104,7 @@ func WithDial(dialer net.Dialer) Option {
 
 func NewHandler(opts ...Option) Handler {
 	h := &handler{
-		dialer: net.Dialer{
+		dialer: &net.Dialer{
 			Timeout: time.Second * 10,
 		},
 	}

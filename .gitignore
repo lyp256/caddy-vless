@@ -15,6 +15,5 @@
 # vendor/
 
 .idea/*
-.vscode/
 assert/*
 build/*
