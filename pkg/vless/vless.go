@@ -2,7 +2,6 @@ package vless
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -72,7 +71,7 @@ func (h *handler) Handle(ctx context.Context, connect io.ReadWriteCloser) error 
 	if h.postHandle != nil {
 		h.postHandle(ctx, request, up, down, err)
 	}
-	if err != nil && !errors.Is(err, io.EOF) {
+	if err != nil {
 		return fmt.Errorf("traffic forward:%w", err)
 	}
 	return nil

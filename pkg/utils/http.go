@@ -5,21 +5,6 @@ import (
 	"net/http"
 )
 
-func Hijack(writer http.ResponseWriter, request *http.Request) (io.ReadWriteCloser, error) {
-	if request.ProtoMajor < 2 {
-		if hj, ok := writer.(http.Hijacker); ok {
-			conn, _, err := hj.Hijack()
-			return conn, err
-		}
-	}
-
-	f, ok := writer.(http.Flusher)
-	if ok {
-		f.Flush()
-	}
-	return &h2Stream{writer: writer, request: request, flusher: f}, nil
-}
-
 func H2Hijack(writer http.ResponseWriter, request *http.Request) (io.ReadWriteCloser, error) {
 	writer.WriteHeader(http.StatusContinue)
 	f, ok := writer.(http.Flusher)
