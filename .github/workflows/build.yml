@@ -13,7 +13,7 @@ permissions:
 
 env:
   XCADDY_PKG: github.com/caddyserver/xcaddy/cmd/xcaddy@latest
-  XCADDY_BIN: $(go env GOPATH)/bin/xcaddy
+  XCADDY_BIN: ${{ github.workspace }}/bin/xcaddy
 
 jobs:
   test:
@@ -58,7 +58,9 @@ jobs:
           cache: true
 
       - name: Install xcaddy
-        run: go install "$XCADDY_PKG"
+        run: |
+          GOBIN="$GITHUB_WORKSPACE/bin" go install "$XCADDY_PKG"
+          "$XCADDY_BIN" version
 
       - name: Show Go version
         run: go version
@@ -95,7 +97,9 @@ jobs:
           cache: true
 
       - name: Install xcaddy
-        run: go install "$XCADDY_PKG"
+        run: |
+          GOBIN="$GITHUB_WORKSPACE/bin" go install "$XCADDY_PKG"
+          "$XCADDY_BIN" version
 
       - name: Show Go version
         run: go version
