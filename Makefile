@@ -26,7 +26,7 @@ vet:
 
 .PHONY: lint
 lint:
-	golangci-lint-v2 run ./...
+	golangci-lint run ./...
 
 .PHONY: all-check
 all-check:tidy fmt vet lint git-check
