@@ -1,74 +1,77 @@
 # caddy-vless
 
-Caddy 的 VLESS 协议支持模块。
+[中文](README_CN.md) | English
 
-## 构建
+A Caddy module that adds VLESS protocol support.
 
-本项目使用 `xcaddy` 构建自定义 Caddy 二进制，并额外编译入：
+## Build
 
-- 当前仓库中的 `vless` 模块
+This project uses `xcaddy` to build a custom Caddy binary and additionally compiles in:
+
+- the `vless` module from this repository
 - `github.com/caddy-dns/alidns`
+- `github.com/caddy-dns/cloudflare`
 
-本地构建：
+Build locally:
 
 ```bash
 make build
 ```
 
-产物输出到：
+The output binary is written to:
 
 - `build/caddy`
 
-如果你需要直接执行底层命令，等价构建方式见 [Makefile](Makefile)。
+If you need to run the underlying command directly, see the equivalent build definition in [Makefile](Makefile).
 
-## 运行
+## Run
 
-使用本地 Caddyfile 启动：
+Start with the local Caddyfile:
 
 ```bash
 ./build/caddy run --config ./build/caddyfile
 ```
 
-查看模块是否已编译进二进制：
+Check whether the module has been compiled into the binary:
 
 ```bash
 ./build/caddy list-modules | grep vless
 ```
 
-查看版本信息：
+Show version information:
 
 ```bash
 ./build/caddy version
 ```
 
-## 测试
+## Test
 
 ```bash
 make test
 ```
 
-如需执行完整检查：
+To run the full checks:
 
 ```bash
 make all-check
 ```
 
-## 发布
+## Release
 
-GitHub Releases 只发布 Linux `amd64` 和 `arm64` 二进制文件，不再提供 Docker 镜像。
+GitHub Releases only publishes Linux `amd64` and `arm64` binaries. Docker images are no longer provided.
 
-CI 位于 [`.github/workflows/build.yml`](.github/workflows/build.yml)，会在以下场景运行：
+CI is defined in [`.github/workflows/build.yml`](.github/workflows/build.yml) and runs in these cases:
 
-- push 到 `main`
-- pull request
-- release 发布
+- pushes to `main`
+- pull requests
+- release publishing
 
-## 配置示例
+## Configuration Example
 
-支持的配置项：
+Supported configuration options:
 
-- `uuids`：允许访问的 VLESS 用户 UUID 列表
-- `socks5`：可选的上游 SOCKS5 代理，格式为 `[username:password@]host:port`
+- `uuids`: list of allowed VLESS user UUIDs
+- `socks5`: optional upstream SOCKS5 proxy in the format `[username:password@]host:port`
 
 ```caddyfile
 https://example.com {
@@ -89,7 +92,7 @@ https://example.com {
 }
 ```
 
-带认证信息的 SOCKS5 配置示例：
+Example SOCKS5 configuration with authentication:
 
 ```caddyfile
 https://example.com {
@@ -104,4 +107,4 @@ https://example.com {
 }
 ```
 
-未配置 `socks5` 时，VLESS 握手后的出站连接会继续直接连接目标地址。配置 `socks5` 后，后续上游连接会通过该代理建立。
+If `socks5` is not configured, outbound connections after the VLESS handshake connect directly to the target address. If `socks5` is configured, subsequent upstream connections are established through that proxy.
