@@ -13,6 +13,7 @@ import (
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/google/uuid"
 	pkgvless "github.com/lyp256/caddy-vless/pkg/vless"
+	"go.uber.org/zap"
 	"golang.org/x/net/proxy"
 )
 
@@ -30,6 +31,7 @@ type vlessModule struct {
 
 	userIDs map[string]struct{}
 	dialer  pkgvless.Dialer
+	logger  *zap.Logger
 }
 
 // CaddyModule returns the Caddy module information.
@@ -45,6 +47,8 @@ func (m *vlessModule) Provision(ctx caddy.Context) error {
 	if m == nil {
 		return nil
 	}
+
+	m.logger = ctx.Logger(m)
 
 	if m.UUIDS != nil {
 		m.userIDs = make(map[string]struct{}, len(m.UUIDS))
@@ -92,6 +96,9 @@ func (m *vlessModule) ServeHTTP(w http.ResponseWriter, r *http.Request, next cad
 	})}
 	if m != nil && m.dialer != nil {
 		opts = append(opts, pkgvless.WithDial(m.dialer))
+	}
+	if m != nil && m.logger != nil {
+		opts = append(opts, pkgvless.WithLogger(m.logger.Named("handler")))
 	}
 	pkgvless.NewHTTPHandler(opts...).ServeHTTP(w, r)
 	return nil

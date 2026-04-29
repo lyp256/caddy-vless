@@ -10,7 +10,7 @@ endif
 
 XCADDY?=$(shell go env GOPATH)/bin/xcaddy
 MODULE=$(shell go list -m)
-XCADDY_BUILD_ARGS=build --with $(MODULE)=. --with github.com/caddy-dns/alidns
+XCADDY_BUILD_ARGS=build --with $(MODULE)=. --with github.com/caddy-dns/alidns --with github.com/caddy-dns/cloudflare
 
 .PHONY: fmt
 fmt:

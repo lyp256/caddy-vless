@@ -71,7 +71,7 @@ func TestTransportClosesPeersAfterCopyCompletes(t *testing.T) {
 	var up, down int64
 	var err error
 	go func() {
-		up, down, err = Transport(upstream, downstream)
+		up, down, err = Transport(upstream, downstream, nil)
 		close(done)
 	}()
 

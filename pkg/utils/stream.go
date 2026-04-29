@@ -8,7 +8,7 @@ import (
 	"net"
 	"sync"
 
-	"github.com/sirupsen/logrus"
+	"go.uber.org/zap"
 )
 
 type closeWriter interface {
@@ -19,7 +19,7 @@ type closeReader interface {
 	CloseRead() error
 }
 
-func Transport(upstream, downstream io.ReadWriter) (up, down int64, err error) {
+func Transport(upstream, downstream io.ReadWriter, logger *zap.Logger) (up, down int64, err error) {
 	var upErr, downErr error
 	wg := &sync.WaitGroup{}
 	wg.Add(2)
@@ -62,7 +62,9 @@ func Transport(upstream, downstream io.ReadWriter) (up, down int64, err error) {
 		case errors.Is(downErr, net.ErrClosed):
 			fallthrough
 		case errors.Is(downErr, context.Canceled):
-			logrus.Debugf("[upstream=>downstream]:%s", err)
+			if logger != nil {
+				logger.Debug("transport closed", zap.String("direction", "upstream=>downstream"), zap.Error(downErr))
+			}
 		default:
 			errs = append(errs, fmt.Errorf("[upstream=>downstream]:%w", downErr))
 		}
@@ -72,7 +74,9 @@ func Transport(upstream, downstream io.ReadWriter) (up, down int64, err error) {
 		case errors.Is(upErr, net.ErrClosed):
 			fallthrough
 		case errors.Is(upErr, context.Canceled):
-			logrus.Debugf("[downstream=>upstream]:%s", upErr)
+			if logger != nil {
+				logger.Debug("transport closed", zap.String("direction", "downstream=>upstream"), zap.Error(upErr))
+			}
 		default:
 			errs = append(errs, fmt.Errorf("[downstream=>upstream]:%w", upErr))
 		}

@@ -6,10 +6,9 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"strings"
 	"time"
 
-	"github.com/sirupsen/logrus"
+	"go.uber.org/zap"
 
 	"github.com/lyp256/caddy-vless/pkg/utils"
 )
@@ -26,6 +25,7 @@ type handler struct {
 	preHandle  func(ctx context.Context, request Requester) error
 	postHandle func(ctx context.Context, request Requester, upBytes, downBytes int64, err error)
 	dialer     Dialer
+	logger     *zap.Logger
 }
 
 func (h *handler) Handle(ctx context.Context, connect io.ReadWriteCloser) error {
@@ -33,9 +33,16 @@ func (h *handler) Handle(ctx context.Context, connect io.ReadWriteCloser) error 
 	request := requestPool.Get().(*requestInfo)
 	defer requestPool.Put(request)
 	err := request.FromReader(connect)
-	logrus.Debug(request)
 	if err != nil {
 		return fmt.Errorf("handshake:%w", err)
+	}
+	if h.logger != nil {
+		clientID := request.UUID()
+		h.logger.Debug("parsed vless request",
+			zap.String("client_id", (&clientID).String()),
+			zap.String("destination", request.DestAddr()),
+			zap.Uint8("command", uint8(request.Command())),
+		)
 	}
 	// verify
 	if h.preHandle != nil {
@@ -71,7 +78,7 @@ func (h *handler) Handle(ctx context.Context, connect io.ReadWriteCloser) error 
 	}
 	defer func() { _ = upStream.Close() }()
 
-	up, down, err := utils.Transport(upStream, connect)
+	up, down, err := utils.Transport(upStream, connect, h.logger)
 	if h.postHandle != nil {
 		h.postHandle(ctx, request, up, down, err)
 	}
@@ -102,6 +109,12 @@ func WithDial(dialer Dialer) Option {
 	}
 }
 
+func WithLogger(logger *zap.Logger) Option {
+	return func(h *handler) {
+		h.logger = logger
+	}
+}
+
 func NewHandler(opts ...Option) Handler {
 	h := &handler{
 		dialer: &net.Dialer{
@@ -118,12 +131,15 @@ func NewHandler(opts ...Option) Handler {
 
 type httpHandler struct {
 	Handler
+	logger *zap.Logger
 }
 
 func (h httpHandler) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 	connect, err := utils.H2Hijack(writer, request)
 	if err != nil {
-		logrus.WithError(err).Warn("vless hijack failed")
+		if h.logger != nil {
+			h.logger.Warn("vless hijack failed", zap.Error(err))
+		}
 		http.Error(writer, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		return
 	}
@@ -134,36 +150,27 @@ func (h httpHandler) ServeHTTP(writer http.ResponseWriter, request *http.Request
 		return
 	}
 
-	status := httpStatus(err)
-	entry := logrus.WithError(err).WithField("status", status)
-	if status >= http.StatusInternalServerError {
-		entry.Error("vless request failed")
-	} else {
-		entry.Warn("vless request rejected")
+	if h.logger != nil {
+		h.logger.Debug("vless request failed", zap.Error(err))
 	}
-	http.Error(writer, http.StatusText(status), status)
-}
-
-func httpStatus(err error) int {
-	switch {
-	case err == nil:
-		return http.StatusOK
-	case strings.HasPrefix(err.Error(), "preVerify:"):
-		return http.StatusForbidden
-	case strings.HasPrefix(err.Error(), "handshake:"), strings.HasPrefix(err.Error(), "unknown command:"), strings.HasPrefix(err.Error(), "reply :"):
-		return http.StatusBadRequest
-	case strings.HasPrefix(err.Error(), "dial "):
-		return http.StatusBadGateway
-	case strings.HasPrefix(err.Error(), "traffic forward:"):
-		return http.StatusBadGateway
-	default:
-		return http.StatusInternalServerError
-	}
+	// 为了 vless 隐蔽性，直接返回 404
+	http.NotFound(writer, request)
 }
 
 // NewHTTPHandler create handle over http
 func NewHTTPHandler(opts ...Option) http.Handler {
+	h := &handler{
+		dialer: &net.Dialer{
+			Timeout: time.Second * 10,
+		},
+	}
+	for i := range opts {
+		if opts[i] != nil {
+			opts[i](h)
+		}
+	}
 	return httpHandler{
-		Handler: NewHandler(opts...),
+		Handler: h,
+		logger:  h.logger,
 	}
 }

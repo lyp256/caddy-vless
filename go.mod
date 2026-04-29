@@ -6,8 +6,8 @@ require (
 	github.com/caddy-dns/alidns v1.0.28
 	github.com/caddyserver/caddy/v2 v2.11.2
 	github.com/google/uuid v1.6.0
-	github.com/sirupsen/logrus v1.9.4
 	github.com/xtls/xray-core v1.260327.0
+	go.uber.org/zap v1.27.1
 	golang.org/x/net v0.53.0
 )
 
@@ -98,6 +98,7 @@ require (
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/shopspring/decimal v1.4.0 // indirect
 	github.com/shurcooL/sanitized_anchor_name v1.0.0 // indirect
+	github.com/sirupsen/logrus v1.9.4 // indirect
 	github.com/slackhq/nebula v1.10.3 // indirect
 	github.com/smallstep/certificates v0.30.0-rc3 // indirect
 	github.com/smallstep/cli-utils v0.12.2 // indirect
@@ -149,7 +150,6 @@ require (
 	go.step.sm/crypto v0.76.2 // indirect
 	go.uber.org/automaxprocs v1.6.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	go.uber.org/zap v1.27.1 // indirect
 	go.uber.org/zap/exp v0.3.0 // indirect
 	go.yaml.in/yaml/v2 v2.4.4 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect

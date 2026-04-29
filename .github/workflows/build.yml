@@ -131,6 +131,7 @@ jobs:
           "$XCADDY_BIN" build \
             --with github.com/lyp256/caddy-vless=. \
             --with github.com/caddy-dns/alidns \
+            --with github.com/caddy-dns/cloudflare \
             --output "build/${BINARY_NAME}"
 
       - name: Compress release binary with UPX
