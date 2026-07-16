@@ -2,7 +2,7 @@
 
 [中文](README_CN.md) | English
 
-A Caddy module that adds VLESS protocol support.
+A Caddy module that adds VLESS protocol support, including XHTTP (stream-one), HTTPUpgrade, and WebSocket transports.
 
 ## Build
 
@@ -22,7 +22,7 @@ The output binary is written to:
 
 - `build/caddy`
 
-If you need to run the underlying command directly, see the equivalent build definition in [Makefile](Makefile).
+To run the build command directly, see [Makefile](Makefile).
 
 ## Run
 

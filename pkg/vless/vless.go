@@ -6,10 +6,12 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"strings"
 	"time"
 
 	"go.uber.org/zap"
 
+	"github.com/gorilla/websocket"
 	"github.com/lyp256/caddy-vless/pkg/utils"
 )
 
@@ -130,12 +132,29 @@ func NewHandler(opts ...Option) Handler {
 }
 
 type httpHandler struct {
+	ws websocket.Upgrader
 	Handler
 	logger *zap.Logger
 }
 
 func (h httpHandler) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
-	connect, err := utils.H2Hijack(writer, request)
+	var (
+		connect io.ReadWriteCloser
+		err     error
+	)
+	if request.ProtoMajor == 1 && strings.EqualFold(request.Header.Get("Upgrade"), "websocket") {
+		if request.Header.Get("Sec-Websocket-Key") != "" {
+			// websocket
+			connect, err = utils.WSShanke(h.ws, writer, request)
+		} else {
+			// httpupgrade
+			connect, err = utils.H1Upgrade(writer, request)
+		}
+	} else {
+		// xhttp
+		connect, err = utils.H2Hijack(writer, request)
+	}
+
 	if err != nil {
 		if h.logger != nil {
 			h.logger.Warn("vless hijack failed", zap.Error(err))

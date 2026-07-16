@@ -5,6 +5,18 @@ import (
 	"net/http"
 )
 
+func H1Upgrade(writer http.ResponseWriter, request *http.Request) (io.ReadWriteCloser, error) {
+	writer.Header().Set("Connection", "Upgrade")
+	writer.Header().Set("Upgrade", "websocket")
+	writer.WriteHeader(http.StatusSwitchingProtocols)
+	rc := http.NewResponseController(writer)
+	_ = rc.Flush()
+	conn, rw, err := rc.Hijack()
+	_ = rw
+	return conn, err
+
+}
+
 func H2Hijack(writer http.ResponseWriter, request *http.Request) (io.ReadWriteCloser, error) {
 	writer.WriteHeader(http.StatusContinue)
 	f, ok := writer.(http.Flusher)

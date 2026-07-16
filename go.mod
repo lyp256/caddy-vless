@@ -6,6 +6,7 @@ require (
 	github.com/caddy-dns/alidns v1.0.28
 	github.com/caddyserver/caddy/v2 v2.11.2
 	github.com/google/uuid v1.6.0
+	github.com/gorilla/websocket v1.5.3
 	github.com/xtls/xray-core v1.260327.0
 	go.uber.org/zap v1.27.1
 	golang.org/x/net v0.53.0

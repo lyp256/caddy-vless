@@ -2,7 +2,7 @@
 
 中文 | [English](README.md)
 
-Caddy 的 VLESS 协议支持模块。
+Caddy 的 VLESS 协议模块，支持 XHTTP（stream-one）、HTTPUpgrade 和 WebSocket 传输方式。
 
 ## 构建
 
@@ -22,7 +22,7 @@ make build
 
 - `build/caddy`
 
-如果你需要直接执行底层命令，等价构建方式见 [Makefile](Makefile)。
+如需自行执行构建命令，请参阅 [Makefile](Makefile)。
 
 ## 运行
 
